@@ -110,6 +110,8 @@ import { tarifasToolDefinition, tarifasToolImplementation } from './modules/conf
 import { totalModelesToolDefinition, totalModelesToolImplementation } from './modules/system/totalmodeles/index.js';
 import { variantesToolDefinition, variantesToolImplementation } from './modules/core-business/variantes/index.js';
 import { workEventesToolDefinition, workEventesToolImplementation } from './modules/system/workeventes/index.js';
+import { createProveedorToolDefinition, createProveedorImplementation } from './modules/core-business/proveedores/index.js';
+import { createFacturaProveedorToolDefinition, createFacturaProveedorImplementation } from './modules/purchasing/facturaproveedores/index.js';
 
 const server = new Server(
   {
@@ -2095,6 +2097,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      createProveedorToolDefinition,
+      createFacturaProveedorToolDefinition,
     ],
   };
 });
@@ -3834,6 +3838,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
+      }
+
+      case 'create_proveedor': {
+        return await createProveedorImplementation(request.params.arguments as any, fsClient);
+      }
+
+      case 'create_factura_proveedor': {
+        return await createFacturaProveedorImplementation(request.params.arguments as any, fsClient);
       }
 
       default:
