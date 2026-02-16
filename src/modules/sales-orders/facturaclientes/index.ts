@@ -9,7 +9,9 @@ export {
   toolClientesTopFacturacionDefinition as facturaclientesTopFacturacionToolDefinition,
   toolClientesTopFacturacionImplementation as facturaclientesTopFacturacionToolImplementation,
   toolClientesPerdidosDefinition as facturaclientesPerdidosToolDefinition,
-  toolClientesPerdidosImplementation as facturaclientesPerdidosToolImplementation
+  toolClientesPerdidosImplementation as facturaclientesPerdidosToolImplementation,
+  createFacturaClienteToolDefinition,
+  createFacturaClienteImplementation
 } from './tool.js';
 export {
   toolTiempoBeneficiosDefinition as facturaclientesTiempoBeneficiosToolDefinition,

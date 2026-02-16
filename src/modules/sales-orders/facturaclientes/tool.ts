@@ -1346,6 +1346,250 @@ export async function toolFacturasConErroresImplementation(
   }
 }
 
+// Tool definition for creating customer invoices
+interface LineaFacturaCliente {
+  descripcion?: string;
+  referencia?: string;
+  cantidad: number;
+  pvpunitario: number;
+  dtopor?: number;
+  dtopor2?: number;
+  codimpuesto?: string;
+  irpf?: number;
+}
+
+export const createFacturaClienteToolDefinition = {
+  name: 'create_factura_cliente',
+  description: 'Crea una nueva factura de cliente en FacturaScripts. Permite especificar el cliente, fecha, líneas de detalle con productos/servicios, y opcionalmente marcarla como pagada. Usa el endpoint dedicado crearFacturaCliente que crea el documento, añade líneas y calcula totales atómicamente.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      codcliente: {
+        type: 'string',
+        description: 'Código del cliente (requerido). Usar get_clientes para obtener códigos.',
+      },
+      fecha: {
+        type: 'string',
+        description: 'Fecha de la factura en formato YYYY-MM-DD (por defecto: hoy)',
+      },
+      hora: {
+        type: 'string',
+        description: 'Hora de la factura en formato HH:MM:SS',
+      },
+      codpago: {
+        type: 'string',
+        description: 'Código de forma de pago (ej: TRANS, CONT). Usar get_formapagos para ver las disponibles.',
+      },
+      codserie: {
+        type: 'string',
+        description: 'Código de serie de la factura (ej: A, B, R). Usar get_series para ver las series disponibles.',
+      },
+      codalmacen: {
+        type: 'string',
+        description: 'Código del almacén (ej: ALG)',
+      },
+      direccion: {
+        type: 'string',
+        description: 'Dirección del cliente para esta factura',
+      },
+      ciudad: {
+        type: 'string',
+        description: 'Ciudad del cliente para esta factura',
+      },
+      provincia: {
+        type: 'string',
+        description: 'Provincia del cliente para esta factura',
+      },
+      observaciones: {
+        type: 'string',
+        description: 'Observaciones o notas sobre la factura',
+      },
+      pagada: {
+        type: 'boolean',
+        description: 'Marcar la factura como pagada al crearla (por defecto: false)',
+      },
+      lineas: {
+        type: 'array',
+        description: 'Líneas de la factura (requerido, al menos una)',
+        items: {
+          type: 'object',
+          properties: {
+            descripcion: {
+              type: 'string',
+              description: 'Descripción del producto/servicio',
+            },
+            referencia: {
+              type: 'string',
+              description: 'Referencia o código del producto',
+            },
+            cantidad: {
+              type: 'number',
+              description: 'Cantidad (requerido)',
+            },
+            pvpunitario: {
+              type: 'number',
+              description: 'Precio unitario sin IVA (requerido)',
+            },
+            dtopor: {
+              type: 'number',
+              description: 'Porcentaje de descuento (0-100)',
+            },
+            dtopor2: {
+              type: 'number',
+              description: 'Segundo porcentaje de descuento (0-100)',
+            },
+            codimpuesto: {
+              type: 'string',
+              description: 'Código del impuesto (ej: IVA21, IVA10, IVA4). Por defecto: IVA21',
+            },
+            irpf: {
+              type: 'number',
+              description: 'Porcentaje de retención IRPF',
+            },
+          },
+          required: ['cantidad', 'pvpunitario'],
+        },
+      },
+    },
+    required: ['codcliente', 'lineas'],
+  },
+};
+
+export async function createFacturaClienteImplementation(
+  args: Record<string, any>,
+  client: FacturaScriptsClient
+) {
+  try {
+    // Validate codcliente
+    if (!args.codcliente || typeof args.codcliente !== 'string' || args.codcliente.trim() === '') {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            error: 'Parámetro requerido',
+            message: 'El código del cliente (codcliente) es obligatorio.',
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    // Validate lineas
+    if (!args.lineas || !Array.isArray(args.lineas) || args.lineas.length === 0) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            error: 'Parámetro requerido',
+            message: 'Se requiere al menos una línea en la factura.',
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    // Validate each line
+    for (let i = 0; i < args.lineas.length; i++) {
+      const linea = args.lineas[i];
+      if (!linea.descripcion && !linea.referencia) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Error de validación',
+              message: `Línea ${i + 1}: se requiere al menos una descripción o referencia.`,
+            }, null, 2),
+          }],
+          isError: true,
+        };
+      }
+      if (typeof linea.cantidad !== 'number' || linea.cantidad <= 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Error de validación',
+              message: `Línea ${i + 1}: la cantidad debe ser un número mayor que 0.`,
+            }, null, 2),
+          }],
+          isError: true,
+        };
+      }
+      if (typeof linea.pvpunitario !== 'number' || linea.pvpunitario < 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              error: 'Error de validación',
+              message: `Línea ${i + 1}: el precio unitario debe ser un número no negativo.`,
+            }, null, 2),
+          }],
+          isError: true,
+        };
+      }
+    }
+
+    const codcliente = args.codcliente.trim();
+
+    // Build lines array
+    const lineas: LineaFacturaCliente[] = args.lineas.map((l: any) => ({
+      ...(l.descripcion?.trim() ? { descripcion: l.descripcion.trim() } : {}),
+      ...(l.referencia?.trim() ? { referencia: l.referencia.trim() } : {}),
+      cantidad: l.cantidad,
+      pvpunitario: l.pvpunitario,
+      ...(l.dtopor ? { dtopor: l.dtopor } : {}),
+      ...(l.dtopor2 ? { dtopor2: l.dtopor2 } : {}),
+      ...(l.codimpuesto?.trim() ? { codimpuesto: l.codimpuesto.trim() } : {}),
+      ...(l.irpf ? { irpf: l.irpf } : {}),
+    }));
+
+    // Build invoice data — clean, no workarounds
+    const facturaData: Record<string, any> = {
+      codcliente,
+      lineas: JSON.stringify(lineas),
+    };
+
+    if (args.fecha) facturaData.fecha = args.fecha.trim();
+    if (args.hora) facturaData.hora = args.hora.trim();
+    if (args.codpago) facturaData.codpago = args.codpago.trim();
+    if (args.codserie) facturaData.codserie = args.codserie.trim();
+    if (args.codalmacen) facturaData.codalmacen = args.codalmacen.trim();
+    if (args.direccion) facturaData.direccion = args.direccion.trim();
+    if (args.ciudad) facturaData.ciudad = args.ciudad.trim();
+    if (args.provincia) facturaData.provincia = args.provincia.trim();
+    if (args.observaciones) facturaData.observaciones = args.observaciones.trim();
+    if (args.pagada === true) facturaData.pagada = 1;
+
+    // POST directly to the dedicated endpoint
+    const result = await client.post<any>('/crearFacturaCliente', facturaData);
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          success: true,
+          message: `Factura de cliente creada correctamente.`,
+          data: result,
+        }, null, 2),
+      }],
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    const axiosError = error as any;
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          error: 'Error al crear factura de cliente',
+          message: errorMessage,
+          details: axiosError?.response?.data || null,
+        }, null, 2),
+      }],
+      isError: true,
+    };
+  }
+}
+
 // Tool definition for lost clients (clients who had invoices but none within specified date range)
 export const toolClientesPerdidosDefinition = {
   name: 'get_clientes_perdidos',

@@ -87,7 +87,7 @@ import { SeriesResource } from './modules/configuration/series/resource.js';
 import { SubcuentasResource } from './modules/accounting/subcuentas/resource.js';
 import { TarifasResource } from './modules/configuration/tarifas/resource.js';
 // Import new tool functions
-import { toolByCifnifImplementation, toolClientesMorososImplementation, toolClientesTopFacturacionImplementation, toolClientesSinComprasImplementation, toolExportarFacturaImplementation, toolClientesFrecuenciaComprasImplementation, toolFacturasConErroresImplementation, toolClientesPerdidosImplementation } from './modules/sales-orders/facturaclientes/tool.js';
+import { toolByCifnifImplementation, toolClientesMorososImplementation, toolClientesTopFacturacionImplementation, toolClientesSinComprasImplementation, toolExportarFacturaImplementation, toolClientesFrecuenciaComprasImplementation, toolFacturasConErroresImplementation, toolClientesPerdidosImplementation, createFacturaClienteToolDefinition, createFacturaClienteImplementation } from './modules/sales-orders/facturaclientes/tool.js';
 import { toolTiempoBeneficiosImplementation } from './modules/sales-orders/facturaclientes/tool-tiempo-beneficios.js';
 import { toolTiempoBeneficiosBulkImplementation } from './modules/sales-orders/facturaclientes/tool-tiempo-beneficios-bulk.js';
 import { lowStockToolImplementation } from './modules/core-business/stocks/tool.js';
@@ -2099,6 +2099,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       createProveedorToolDefinition,
       createFacturaProveedorToolDefinition,
+      createFacturaClienteToolDefinition,
     ],
   };
 });
@@ -3846,6 +3847,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'create_factura_proveedor': {
         return await createFacturaProveedorImplementation(request.params.arguments as any, fsClient);
+      }
+
+      case 'create_factura_cliente': {
+        return await createFacturaClienteImplementation(request.params.arguments as any, fsClient);
       }
 
       default:
