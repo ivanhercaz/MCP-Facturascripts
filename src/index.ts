@@ -92,7 +92,7 @@ import { toolTiempoBeneficiosImplementation } from './modules/sales-orders/factu
 import { toolTiempoBeneficiosBulkImplementation } from './modules/sales-orders/facturaclientes/tool-tiempo-beneficios-bulk.js';
 import { lowStockToolImplementation } from './modules/core-business/stocks/tool.js';
 import { toolProductosMasVendidosImplementation } from './modules/sales-orders/line-items/lineafacturaclientes/tool.js';
-import { productosNoVendidosToolDefinition, productosNoVendidosToolImplementation } from './modules/core-business/productos/index.js';
+import { productosNoVendidosToolDefinition, productosNoVendidosToolImplementation, createProductoToolDefinition, createProductoImplementation } from './modules/core-business/productos/index.js';
 import { partidasToolDefinition, partidasToolImplementation } from './modules/accounting/partidas/index.js';
 import { pedidoproveedoresToolDefinition, pedidoproveedoresToolImplementation } from './modules/purchasing/pedidoproveedores/index.js';
 import { presupuestoproveedoresToolDefinition, presupuestoproveedoresToolImplementation } from './modules/purchasing/presupuestoproveedores/index.js';
@@ -2100,6 +2100,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       createProveedorToolDefinition,
       createFacturaProveedorToolDefinition,
       createFacturaClienteToolDefinition,
+      createProductoToolDefinition,
     ],
   };
 });
@@ -3851,6 +3852,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'create_factura_cliente': {
         return await createFacturaClienteImplementation(request.params.arguments as any, fsClient);
+      }
+
+      case 'create_producto': {
+        return await createProductoImplementation(request.params.arguments as any, fsClient);
       }
 
       default:

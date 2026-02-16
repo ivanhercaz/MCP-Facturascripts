@@ -1,3 +1,5 @@
+import { FacturaScriptsClient } from '../../../fs/client.js';
+
 export const toolDefinition = {
   name: 'get_productos',
   description: 'Obtiene la lista de productos con paginación y filtros avanzados',
@@ -38,6 +40,151 @@ export const toolImplementation = async (resource: any, buildUri: (resourceName:
     ],
   };
 };
+
+// Tool definition for creating products
+export const createProductoToolDefinition = {
+  name: 'create_producto',
+  description: 'Crea un nuevo producto en FacturaScripts. Permite especificar referencia, descripción, precio, familia, fabricante, impuesto y opciones de compra/venta/stock.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      referencia: {
+        type: 'string',
+        description: 'Código/referencia del producto (requerido)',
+      },
+      descripcion: {
+        type: 'string',
+        description: 'Descripción del producto (requerido)',
+      },
+      precio: {
+        type: 'number',
+        description: 'Precio de venta sin IVA',
+      },
+      codfamilia: {
+        type: 'string',
+        description: 'Código de familia/categoría. Usar get_familias para ver las disponibles.',
+      },
+      codfabricante: {
+        type: 'string',
+        description: 'Código del fabricante. Usar get_fabricantes para ver los disponibles.',
+      },
+      codimpuesto: {
+        type: 'string',
+        description: 'Código del impuesto (ej: IVA21, IVA10, IVA4). Usar get_impuestos para ver los disponibles.',
+      },
+      secompra: {
+        type: 'boolean',
+        description: 'El producto se puede comprar (por defecto: true)',
+      },
+      sevende: {
+        type: 'boolean',
+        description: 'El producto se puede vender (por defecto: true)',
+      },
+      nostock: {
+        type: 'boolean',
+        description: 'No controlar stock para este producto (por defecto: false)',
+      },
+      publico: {
+        type: 'boolean',
+        description: 'Producto visible públicamente (por defecto: false)',
+      },
+      ventasinstock: {
+        type: 'boolean',
+        description: 'Permitir venta sin stock (por defecto: false)',
+      },
+      tipo: {
+        type: 'string',
+        description: 'Tipo de producto',
+      },
+      observaciones: {
+        type: 'string',
+        description: 'Observaciones o notas sobre el producto',
+      },
+    },
+    required: ['referencia', 'descripcion'],
+  },
+};
+
+export async function createProductoImplementation(
+  args: Record<string, any>,
+  client: FacturaScriptsClient
+) {
+  try {
+    // Validate referencia
+    if (!args.referencia || typeof args.referencia !== 'string' || args.referencia.trim() === '') {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            error: 'Parámetro requerido',
+            message: 'La referencia del producto es obligatoria.',
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    // Validate descripcion
+    if (!args.descripcion || typeof args.descripcion !== 'string' || args.descripcion.trim() === '') {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            error: 'Parámetro requerido',
+            message: 'La descripción del producto es obligatoria.',
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    // Build product data — clean, no workarounds
+    const productoData: Record<string, any> = {
+      referencia: args.referencia.trim(),
+      descripcion: args.descripcion.trim(),
+    };
+
+    if (args.precio !== undefined) productoData.precio = args.precio;
+    if (args.codfamilia) productoData.codfamilia = args.codfamilia.trim();
+    if (args.codfabricante) productoData.codfabricante = args.codfabricante.trim();
+    if (args.codimpuesto) productoData.codimpuesto = args.codimpuesto.trim();
+    if (args.tipo) productoData.tipo = args.tipo.trim();
+    if (args.observaciones) productoData.observaciones = args.observaciones.trim();
+    if (args.secompra !== undefined) productoData.secompra = args.secompra ? 1 : 0;
+    if (args.sevende !== undefined) productoData.sevende = args.sevende ? 1 : 0;
+    if (args.nostock !== undefined) productoData.nostock = args.nostock ? 1 : 0;
+    if (args.publico !== undefined) productoData.publico = args.publico ? 1 : 0;
+    if (args.ventasinstock !== undefined) productoData.ventasinstock = args.ventasinstock ? 1 : 0;
+
+    // POST directly to the generic endpoint
+    const result = await client.post<any>('/productos', productoData);
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          success: true,
+          message: 'Producto creado correctamente.',
+          data: result,
+        }, null, 2),
+      }],
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    const axiosError = error as any;
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          error: 'Error al crear producto',
+          message: errorMessage,
+          details: axiosError?.response?.data || null,
+        }, null, 2),
+      }],
+      isError: true,
+    };
+  }
+}
 
 export const noVendidosToolDefinition = {
   name: 'get_productos_no_vendidos',
