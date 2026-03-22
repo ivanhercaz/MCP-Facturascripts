@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FacturaclientesResource, FacturaCliente } from '../../../../src/modules/sales-orders/facturaclientes/resource.js';
-import { toolByCifnifImplementation, toolClientesMorososImplementation, toolClientesTopFacturacionImplementation, toolClientesSinComprasImplementation, toolClientesFrecuenciaComprasImplementation, toolClientesPerdidosImplementation } from '../../../../src/modules/sales-orders/facturaclientes/tool.js';
+import { toolByCifnifImplementation, toolClientesMorososImplementation, toolClientesTopFacturacionImplementation, toolClientesSinComprasImplementation, toolClientesFrecuenciaComprasImplementation, toolClientesPerdidosImplementation, createFacturaClienteImplementation } from '../../../../src/modules/sales-orders/facturaclientes/tool.js';
 import { FacturaScriptsClient } from '../../../../src/fs/client.js';
 
 vi.mock('../../../../src/fs/client.js');
@@ -2534,6 +2534,215 @@ describe('toolClientesPerdidosImplementation', () => {
       expect(parsedResult.data.some(c => c.codcliente === 'CLI003')).toBe(true);
       // CLI001 should NOT be in results (has recent invoice '17-08-2025')
       expect(parsedResult.data.some(c => c.codcliente === 'CLI001')).toBe(false);
+    });
+  });
+});
+
+describe('createFacturaClienteImplementation', () => {
+  let mockClient: any;
+
+  const validArgs = {
+    codcliente: 'CLI001',
+    lineas: [{ descripcion: 'Servicio web', cantidad: 1, pvpunitario: 500 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClient = {
+      post: vi.fn(),
+    };
+  });
+
+  describe('validation', () => {
+    it('should return error when codcliente is missing', async () => {
+      const result = await createFacturaClienteImplementation(
+        { lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('codcliente');
+    });
+
+    it('should return error when codcliente is empty/whitespace', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: '  ', lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when lineas is missing', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001' },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when lineas is empty array', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001', lineas: [] },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when line has no descripcion and no referencia', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001', lineas: [{ cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('Línea 1');
+      expect(response.message).toContain('descripción o referencia');
+    });
+
+    it('should accept line with referencia but no descripcion', async () => {
+      mockClient.post.mockResolvedValue({ doc: { idfactura: 1 } });
+
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001', lineas: [{ referencia: 'REF001', cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('should return error when line has cantidad <= 0', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001', lineas: [{ descripcion: 'Test', cantidad: 0, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('cantidad');
+    });
+
+    it('should return error when line has negative pvpunitario', async () => {
+      const result = await createFacturaClienteImplementation(
+        { codcliente: 'CLI001', lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: -5 }] },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('success', () => {
+    it('should create customer invoice with minimal required fields', async () => {
+      const apiResponse = { doc: { idfactura: 7, codigo: 'FCLI001', total: 605 }, lines: [{ idlinea: 1 }] };
+      mockClient.post.mockResolvedValue(apiResponse);
+
+      const result = await createFacturaClienteImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBeUndefined();
+      expect(response.success).toBe(true);
+      expect(mockClient.post).toHaveBeenCalledWith(
+        '/crearFacturaCliente',
+        expect.objectContaining({
+          codcliente: 'CLI001',
+          lineas: expect.any(String),
+        })
+      );
+
+      // Verify lineas was JSON-stringified
+      const sentData = mockClient.post.mock.calls[0][1];
+      const parsedLineas = JSON.parse(sentData.lineas);
+      expect(parsedLineas[0].descripcion).toBe('Servicio web');
+    });
+
+    it('should create invoice with all optional header fields', async () => {
+      mockClient.post.mockResolvedValue({ success: true });
+
+      await createFacturaClienteImplementation({
+        ...validArgs,
+        fecha: '2026-03-22',
+        hora: '10:30:00',
+        codpago: 'TRANS',
+        codserie: 'A',
+        codalmacen: 'ALG',
+        direccion: 'Calle Test 1',
+        ciudad: 'Madrid',
+        provincia: 'Madrid',
+        observaciones: 'Notas de prueba',
+      }, mockClient);
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.fecha).toBe('2026-03-22');
+      expect(sentData.hora).toBe('10:30:00');
+      expect(sentData.codpago).toBe('TRANS');
+      expect(sentData.codserie).toBe('A');
+      expect(sentData.codalmacen).toBe('ALG');
+      expect(sentData.direccion).toBe('Calle Test 1');
+      expect(sentData.ciudad).toBe('Madrid');
+      expect(sentData.provincia).toBe('Madrid');
+      expect(sentData.observaciones).toBe('Notas de prueba');
+    });
+
+    it('should include pagada flag as integer', async () => {
+      mockClient.post.mockResolvedValue({ success: true });
+
+      await createFacturaClienteImplementation(
+        { ...validArgs, pagada: true },
+        mockClient
+      );
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.pagada).toBe(1);
+    });
+
+    it('should create invoice with multiple lines and all line options', async () => {
+      mockClient.post.mockResolvedValue({ success: true });
+
+      await createFacturaClienteImplementation({
+        codcliente: 'CLI001',
+        lineas: [
+          { descripcion: 'Item 1', cantidad: 2, pvpunitario: 50, dtopor: 10, codimpuesto: 'IVA21' },
+          { referencia: 'REF002', descripcion: 'Item 2', cantidad: 1, pvpunitario: 150, dtopor2: 5, irpf: 15 },
+        ],
+      }, mockClient);
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      const parsedLineas = JSON.parse(sentData.lineas);
+      expect(parsedLineas).toHaveLength(2);
+      expect(parsedLineas[0].dtopor).toBe(10);
+      expect(parsedLineas[0].codimpuesto).toBe('IVA21');
+      expect(parsedLineas[1].referencia).toBe('REF002');
+      expect(parsedLineas[1].dtopor2).toBe(5);
+      expect(parsedLineas[1].irpf).toBe(15);
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle API errors during invoice creation', async () => {
+      mockClient.post.mockRejectedValue(new Error('API timeout'));
+
+      const result = await createFacturaClienteImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.error).toBe('Error al crear factura de cliente');
+      expect(response.message).toBe('API timeout');
+    });
+
+    it('should include API response details in error', async () => {
+      const axiosError: any = new Error('Bad Request');
+      axiosError.response = { data: { message: 'Cliente no encontrado' } };
+      mockClient.post.mockRejectedValue(axiosError);
+
+      const result = await createFacturaClienteImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.details).toEqual({ message: 'Cliente no encontrado' });
     });
   });
 });

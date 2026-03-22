@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProductosResource, Producto } from '../../../../src/modules/core-business/productos/resource.js';
 import { FacturaScriptsClient } from '../../../../src/fs/client.js';
-import { noVendidosToolImplementation } from '../../../../src/modules/core-business/productos/tool.js';
+import { noVendidosToolImplementation, createProductoImplementation } from '../../../../src/modules/core-business/productos/tool.js';
 
 vi.mock('../../../../src/fs/client.js');
 
@@ -432,7 +432,7 @@ describe('ProductosNoVendidosTool', () => {
       expect(response.periodo.descripcion).toBe('Análisis de productos no vendidos desde 2024-01-01');
     });
 
-    it('should filter out products without reference', async () => {
+    it('should filter out products without referencia', async () => {
       const productsWithMissingRefs = [
         {
           referencia: 'PROD001',
@@ -465,6 +465,162 @@ describe('ProductosNoVendidosTool', () => {
 
       expect(response.data).toHaveLength(1);
       expect(response.data[0].referencia).toBe('PROD001');
+    });
+  });
+});
+
+describe('createProductoImplementation', () => {
+  let mockClient: any;
+
+  beforeEach(() => {
+    mockClient = {
+      post: vi.fn(),
+    };
+  });
+
+  describe('validation', () => {
+    it('should return error when referencia is missing', async () => {
+      const result = await createProductoImplementation({ descripcion: 'Test' }, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('referencia');
+    });
+
+    it('should return error when referencia is empty string', async () => {
+      const result = await createProductoImplementation({ referencia: '', descripcion: 'Test' }, mockClient);
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when referencia is whitespace only', async () => {
+      const result = await createProductoImplementation({ referencia: '   ', descripcion: 'Test' }, mockClient);
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when descripcion is missing', async () => {
+      const result = await createProductoImplementation({ referencia: 'REF001' }, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('descripción');
+    });
+
+    it('should return error when descripcion is empty string', async () => {
+      const result = await createProductoImplementation({ referencia: 'REF001', descripcion: '' }, mockClient);
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('success', () => {
+    it('should create product with required fields only', async () => {
+      const apiResponse = { idproducto: 1, referencia: 'REF001', descripcion: 'Test Product' };
+      mockClient.post.mockResolvedValue(apiResponse);
+
+      const result = await createProductoImplementation(
+        { referencia: 'REF001', descripcion: 'Test Product' },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBeUndefined();
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual(apiResponse);
+      expect(mockClient.post).toHaveBeenCalledWith('/productos', {
+        referencia: 'REF001',
+        descripcion: 'Test Product',
+      });
+    });
+
+    it('should create product with all optional fields', async () => {
+      mockClient.post.mockResolvedValue({ idproducto: 1 });
+
+      await createProductoImplementation({
+        referencia: 'REF001',
+        descripcion: 'Test',
+        precio: 19.99,
+        codfamilia: 'FAM01',
+        codfabricante: 'FAB01',
+        codimpuesto: 'IVA21',
+        tipo: 'producto',
+        observaciones: 'Notas',
+        secompra: true,
+        sevende: false,
+        nostock: true,
+        publico: false,
+        ventasinstock: true,
+      }, mockClient);
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.precio).toBe(19.99);
+      expect(sentData.codfamilia).toBe('FAM01');
+      expect(sentData.codfabricante).toBe('FAB01');
+      expect(sentData.codimpuesto).toBe('IVA21');
+      expect(sentData.tipo).toBe('producto');
+      expect(sentData.observaciones).toBe('Notas');
+      expect(sentData.secompra).toBe(1);
+      expect(sentData.sevende).toBe(0);
+      expect(sentData.nostock).toBe(1);
+      expect(sentData.publico).toBe(0);
+      expect(sentData.ventasinstock).toBe(1);
+    });
+
+    it('should trim string fields', async () => {
+      mockClient.post.mockResolvedValue({ idproducto: 1 });
+
+      await createProductoImplementation(
+        { referencia: '  REF001  ', descripcion: '  Test  ' },
+        mockClient
+      );
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.referencia).toBe('REF001');
+      expect(sentData.descripcion).toBe('Test');
+    });
+
+    it('should convert boolean fields to 0/1', async () => {
+      mockClient.post.mockResolvedValue({ idproducto: 1 });
+
+      await createProductoImplementation(
+        { referencia: 'REF001', descripcion: 'Test', secompra: true, sevende: false },
+        mockClient
+      );
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.secompra).toBe(1);
+      expect(sentData.sevende).toBe(0);
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle API errors gracefully', async () => {
+      mockClient.post.mockRejectedValue(new Error('API connection failed'));
+
+      const result = await createProductoImplementation(
+        { referencia: 'REF001', descripcion: 'Test' },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.error).toBe('Error al crear producto');
+      expect(response.message).toBe('API connection failed');
+    });
+
+    it('should include API response details in error', async () => {
+      const axiosError: any = new Error('Bad Request');
+      axiosError.response = { data: { code: 400, message: 'Duplicate referencia' } };
+      mockClient.post.mockRejectedValue(axiosError);
+
+      const result = await createProductoImplementation(
+        { referencia: 'REF001', descripcion: 'Test' },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.details).toEqual({ code: 400, message: 'Duplicate referencia' });
     });
   });
 });

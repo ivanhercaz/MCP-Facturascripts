@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FacturaproveedoresResource } from '../../../../src/modules/purchasing/facturaproveedores/resource.js';
+import { createFacturaProveedorImplementation } from '../../../../src/modules/purchasing/facturaproveedores/tool.js';
 import type { FacturaProveedor } from '../../../../src/types/facturascripts.js';
 
 describe('FacturaproveedoresResource', () => {
@@ -132,6 +133,306 @@ describe('FacturaproveedoresResource', () => {
       expect(result.name).toBe('FacturaScripts FacturaProveedores (Error)');
       expect(result.contents[0].text).toContain('Failed to fetch facturaproveedores');
       expect(result.contents[0].text).toContain(errorMessage);
+    });
+  });
+});
+
+describe('createFacturaProveedorImplementation', () => {
+  let mockClient: any;
+
+  const validArgs = {
+    codproveedor: 'PROV001',
+    lineas: [{ descripcion: 'Servicio consultoria', cantidad: 1, pvpunitario: 100 }],
+  };
+
+  const mockCrearResponse = {
+    doc: {
+      idfactura: '14',
+      codigo: 'FPROV001',
+      codproveedor: 'PROV001',
+      fecha: '2026-03-22',
+      neto: 100,
+      totaliva: 21,
+      total: 121,
+      pagada: false,
+    },
+    lines: [{ idlinea: 1, descripcion: 'Servicio consultoria', cantidad: 1, pvpunitario: 100 }],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClient = {
+      post: vi.fn(),
+      get: vi.fn(),
+    };
+  });
+
+  describe('validation', () => {
+    it('should return error when codproveedor is missing', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('codproveedor');
+    });
+
+    it('should return error when codproveedor is empty/whitespace', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: '  ', lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when lineas is missing', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001' },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('línea');
+    });
+
+    it('should return error when lineas is empty array', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001', lineas: [] },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when lineas is not an array', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001', lineas: 'not-an-array' },
+        mockClient
+      );
+
+      expect(result.isError).toBe(true);
+    });
+
+    it('should return error when line has no descripcion', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001', lineas: [{ cantidad: 1, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('Línea 1');
+      expect(response.message).toContain('descripción');
+    });
+
+    it('should return error when line has cantidad <= 0', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001', lineas: [{ descripcion: 'Test', cantidad: 0, pvpunitario: 10 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('Línea 1');
+      expect(response.message).toContain('cantidad');
+    });
+
+    it('should return error when line has negative pvpunitario', async () => {
+      const result = await createFacturaProveedorImplementation(
+        { codproveedor: 'PROV001', lineas: [{ descripcion: 'Test', cantidad: 1, pvpunitario: -5 }] },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('Línea 1');
+      expect(response.message).toContain('precio unitario');
+    });
+  });
+
+  describe('success without payment', () => {
+    it('should create invoice with minimal required fields', async () => {
+      mockClient.post.mockResolvedValue(mockCrearResponse);
+
+      const result = await createFacturaProveedorImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBeUndefined();
+      expect(response.success).toBe(true);
+      expect(response.resumen.idfactura).toBe(14);
+      expect(response.resumen.codproveedor).toBe('PROV001');
+      expect(response.resumen.num_lineas).toBe(1);
+      expect(response.lineas).toHaveLength(1);
+
+      // Verify POST was called with correct endpoint and serialized lineas
+      expect(mockClient.post).toHaveBeenCalledWith(
+        '/crearFacturaProveedor',
+        expect.objectContaining({
+          codproveedor: 'PROV001',
+          lineas: expect.any(String),
+        })
+      );
+
+      // Verify lineas was JSON-stringified
+      const sentData = mockClient.post.mock.calls[0][1];
+      const parsedLineas = JSON.parse(sentData.lineas);
+      expect(parsedLineas[0].descripcion).toBe('Servicio consultoria');
+    });
+
+    it('should create invoice with all optional header fields', async () => {
+      mockClient.post.mockResolvedValue(mockCrearResponse);
+
+      await createFacturaProveedorImplementation({
+        ...validArgs,
+        fecha: '2026-01-15',
+        numproveedor: 'FP-2026-001',
+        codalmacen: 'ALG',
+        codpago: 'TRANS',
+        codserie: 'A',
+        observaciones: 'Test invoice',
+      }, mockClient);
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      expect(sentData.fecha).toBe('2026-01-15');
+      expect(sentData.numproveedor).toBe('FP-2026-001');
+      expect(sentData.codalmacen).toBe('ALG');
+      expect(sentData.codpago).toBe('TRANS');
+      expect(sentData.codserie).toBe('A');
+      expect(sentData.observaciones).toBe('Test invoice');
+    });
+
+    it('should create invoice with multiple lines', async () => {
+      mockClient.post.mockResolvedValue({
+        doc: { ...mockCrearResponse.doc, neto: 250, totaliva: 52.5, total: 302.5 },
+        lines: [
+          { idlinea: 1, descripcion: 'Item 1', cantidad: 2, pvpunitario: 50 },
+          { idlinea: 2, descripcion: 'Item 2', cantidad: 1, pvpunitario: 150, referencia: 'REF002' },
+        ],
+      });
+
+      const result = await createFacturaProveedorImplementation({
+        codproveedor: 'PROV001',
+        lineas: [
+          { descripcion: 'Item 1', cantidad: 2, pvpunitario: 50 },
+          { descripcion: 'Item 2', cantidad: 1, pvpunitario: 150, referencia: 'REF002', codimpuesto: 'IVA21', dtopor: 10 },
+        ],
+      }, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.resumen.num_lineas).toBe(2);
+    });
+
+    it('should use today date when fecha is not provided', async () => {
+      mockClient.post.mockResolvedValue(mockCrearResponse);
+
+      await createFacturaProveedorImplementation(validArgs, mockClient);
+
+      const sentData = mockClient.post.mock.calls[0][1];
+      const today = new Date().toISOString().split('T')[0];
+      expect(sentData.fecha).toBe(today);
+    });
+
+    it('should return error when idfactura is missing in response', async () => {
+      mockClient.post.mockResolvedValue({ doc: {} });
+
+      const result = await createFacturaProveedorImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.message).toContain('idfactura');
+    });
+  });
+
+  describe('success with pagada=true', () => {
+    it('should mark invoice as paid via dedicated endpoint', async () => {
+      mockClient.post
+        .mockResolvedValueOnce(mockCrearResponse) // crearFacturaProveedor
+        .mockResolvedValueOnce({ success: true }); // pagarFacturaProveedor
+      mockClient.get.mockResolvedValue({ ...mockCrearResponse.doc, pagada: true });
+
+      const result = await createFacturaProveedorImplementation(
+        { ...validArgs, pagada: true },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(mockClient.post).toHaveBeenCalledTimes(2);
+      expect(mockClient.post.mock.calls[1][0]).toBe('/pagarFacturaProveedor/14');
+      expect(response.pago.success).toBe(true);
+      expect(mockClient.get).toHaveBeenCalledWith('/facturaproveedores/14');
+    });
+
+    it('should handle payment endpoint failure gracefully', async () => {
+      mockClient.post
+        .mockResolvedValueOnce(mockCrearResponse) // crearFacturaProveedor
+        .mockRejectedValueOnce(new Error('Payment failed')); // pagarFacturaProveedor
+
+      const result = await createFacturaProveedorImplementation(
+        { ...validArgs, pagada: true },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.success).toBe(true);
+      expect(response.pago.error).toContain('Payment failed');
+    });
+
+    it('should handle re-fetch failure after payment', async () => {
+      mockClient.post
+        .mockResolvedValueOnce(mockCrearResponse)
+        .mockResolvedValueOnce({ success: true });
+      mockClient.get.mockRejectedValue(new Error('Re-fetch failed'));
+
+      const result = await createFacturaProveedorImplementation(
+        { ...validArgs, pagada: true },
+        mockClient
+      );
+      const response = JSON.parse(result.content[0].text);
+
+      // Should still succeed, using original entity data
+      expect(response.success).toBe(true);
+      expect(response.pago.success).toBe(true);
+      expect(response.resumen.idfactura).toBe(14);
+    });
+
+    it('should not attempt payment when pagada is false', async () => {
+      mockClient.post.mockResolvedValue(mockCrearResponse);
+
+      await createFacturaProveedorImplementation(
+        { ...validArgs, pagada: false },
+        mockClient
+      );
+
+      expect(mockClient.post).toHaveBeenCalledTimes(1);
+      expect(mockClient.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('error handling', () => {
+    it('should handle API errors during invoice creation', async () => {
+      mockClient.post.mockRejectedValue(new Error('API timeout'));
+
+      const result = await createFacturaProveedorImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(true);
+      expect(response.error).toBe('Error al crear factura de proveedor');
+      expect(response.message).toBe('API timeout');
+    });
+
+    it('should include API response details in error', async () => {
+      const axiosError: any = new Error('Bad Request');
+      axiosError.response = { data: { message: 'Proveedor no encontrado' } };
+      mockClient.post.mockRejectedValue(axiosError);
+
+      const result = await createFacturaProveedorImplementation(validArgs, mockClient);
+      const response = JSON.parse(result.content[0].text);
+
+      expect(response.details).toEqual({ message: 'Proveedor no encontrado' });
     });
   });
 });
