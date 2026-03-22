@@ -494,10 +494,34 @@ export async function toolByCifnifImplementation(args, client) {
 - **Comprehensive Testing**: Unit tests for all scenarios + integration tests with real APIs
 - **Proper Registration**: Export from module index and register in main server
 
+### Entity Creation Tools Pattern
+
+The server supports write operations (POST) via dedicated creation tools. The FacturaScripts API requires `application/x-www-form-urlencoded` encoding (not JSON).
+
+**Client Write Methods (`src/fs/client.ts`):**
+- `post<T>(endpoint, data)` - Create records, serializes via `toFormData()` to form-urlencoded
+- `put<T>(endpoint, data)` - Update records, same serialization
+- `delete<T>(endpoint)` - Delete records
+
+**Available Creation Tools:**
+
+| Tool | Location | Description |
+|------|----------|-------------|
+| `create_producto` | `src/modules/core-business/productos/tool.ts` | Create product with reference, description, pricing, stock options. Converts booleans to 0/1. |
+| `create_proveedor` | `src/modules/core-business/proveedores/tool.ts` | Create supplier. Two-step: POST proveedor, then PUT contacto with address fields (FacturaScripts auto-creates a contact). |
+| `create_factura_proveedor` | `src/modules/purchasing/facturaproveedores/tool.ts` | Create supplier invoice via `/crearFacturaProveedor` dedicated endpoint. Supports optional payment marking via `/pagarFacturaProveedor/{id}`. Lines sent as JSON string within form data. |
+| `create_factura_cliente` | `src/modules/sales-orders/facturaclientes/tool.ts` | Create customer invoice via `/crearFacturaCliente` dedicated endpoint. Lines sent as JSON string within form data. |
+
+**Key Implementation Details:**
+- `toFormData()` flattens nested objects/arrays into bracket notation (`field[0][key]=value`)
+- Invoice tools use dedicated FacturaScripts endpoints (not generic POST to collection)
+- Line items are JSON-stringified within the form-urlencoded payload
+- Multi-step flows handle partial failures gracefully (e.g., invoice created but payment failed)
+
 ### Quality Checks
 Before completing any task, run:
 - `npm run build` - Ensure TypeScript compiles (currently: ✅ passing)
-- `npm run test` - Run all tests to ensure nothing is broken (currently: ✅ 358 tests passing)
+- `npm run test` - Run all tests to ensure nothing is broken (currently: ✅ 732 tests passing)
 - Test the resource manually if possible with live FacturaScripts API
 
 ### TDD Workflow
@@ -553,8 +577,8 @@ All 28 resources return consistent pagination format:
 
 ### Current Project Status (v1.0.2)
 - ✅ **59 MCP Resources** - Complete FacturaScripts API coverage including OpenAPI part16 implementation
-- ✅ **66 Interactive Tools** - Full Claude Desktop integration with advanced filtering including specialized business analytics and customer retention tools
-- ✅ **567+ Tests Passing** - Comprehensive unit & integration testing with modular organization including specialized business tools and customer retention analytics
+- ✅ **70 Interactive Tools** - Full Claude Desktop integration with advanced filtering, specialized business analytics, customer retention tools, and entity creation (POST) tools
+- ✅ **732 Tests Passing** - Comprehensive unit & integration testing with modular organization including specialized business tools, customer retention analytics, and write operation tools
 - ✅ **Live API Integration** - Working with real FacturaScripts instances
 - ✅ **Advanced API Support** - Full FacturaScripts filtering, sorting, and pagination
 - ✅ **TypeScript Strict Mode** - Full type safety and IntelliSense
