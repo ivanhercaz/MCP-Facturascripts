@@ -392,6 +392,15 @@ All resources have corresponding interactive tools for Claude Desktop:
 - `get_fabricantes`, `get_familias`, `get_contactos`, `get_agentes`
 - `get_almacenes`, `get_atributos`, and 19 more tools covering all resources
 
+### ✏️ Entity Creation Tools
+
+Tools for creating new records via POST. The FacturaScripts API requires `application/x-www-form-urlencoded` encoding.
+
+- **`create_producto`**: Create product with reference, description, pricing, and stock options
+- **`create_proveedor`**: Create supplier with contact info and address (two-step: creates supplier, then updates auto-generated contact with address)
+- **`create_factura_proveedor`**: Create supplier invoice via dedicated endpoint with line items and optional payment marking
+- **`create_factura_cliente`**: Create customer invoice via dedicated endpoint with line items
+
 ### 🎯 Specialized Business Tools
 
 **Advanced Customer Invoice Search**:
